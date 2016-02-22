@@ -1,0 +1,191 @@
+                          /*REALIZADO POR: EDUARDO ARCONES DEL ÁLAMO
+                           ULTIMA MODIFICACION: 22/02/2016
+                           ETSIDI-UNIVERSIDAD POLITECNICA DE MADRID*/
+
+
+int ord_eje=0;              //orden de ejecucion
+int ord_rpm=0;              //orden de revoluciones por minuto
+int ord_pot=0;              //orden de potencia
+
+int val_luz_act=0;          //valor de luz en momento actual
+int val_luz_ant=0;          //valor de luz en momneto anterior
+
+long last_p=0;              //tiempo en que realiza la ultima impresion en pantalla
+int cont_p=0;               //contador de impresion en pantalla
+int mseg_p=1000;            //tiempo entre lecturas de imrpesion en pantalla
+
+long last_x=0;              //tiempo en que realiza la ultima ejecucion del programa
+int cont_x=0;                 //contador de ejecucion
+int mseg_x=100;               // tiempo entre lecturas de ejecución del programa
+
+int nvez=0;                   //numero de veces por segundo queel programa lee el sensor
+long sval=0;                  //sumatorio valor de luz
+int sens=2;                   // valor umbral del sensor entre luz y oscuridad, ajustar en función de la distancia de vuestro sensor
+int nPalas=2;                // numero de palas
+
+
+//---------------------------------------------------------------------------------- 
+void setup() {
+	Serial.begin(9600);   
+	pinMode(6,OUTPUT);           //declaramos los pines digitales como salidas
+	pinMode(5,OUTPUT);
+}
+
+//---------------------------------------------------------------------------------- 
+void loop()
+{
+  val_luz_act=0;
+  val_luz_act=analogRead(A0);         //fotodiodo conectado en el pin de lectura analógico 0
+  
+  nvez++;
+  sval= sval+val_luz_act;
+    
+  if(abs(val_luz_act-val_luz_ant)>sens)    //diferencia de valor de luz mayor que la sensibilidad del fotodiodo
+  {
+    cont_p++;
+    cont_x++;
+  }
+  val_luz_ant=val_luz_act;
+  
+  // ------------------------------------------------  
+  if(millis()-last_p>=mseg_p)             //funcion del arduino que cronometra el tiempo de ejecución, si es mayor que el tiempo de programa, preguntara al teclado si tiene orden
+  {
+    if (Serial.available()>0)
+    {
+      LEER_ORD();
+    }
+  }
+     
+  // ------------------------------------------------  
+  if(millis()-last_x>=mseg_x)             //funcion del arduino que cronometra el tiempo que lleva funcionando el programa, si es mayor que el tiempo de ejecucion, realizara la obtencion de rps y rpm y los pasa a ejecutar
+  { 
+    double rps=((double)cont_x/(nPalas*2))*(1000.0/mseg_x);
+    double rpm=((double)cont_x/(nPalas*2))*(60000.0/mseg_x);
+    
+    
+    if (rps>ord_rpm)
+       ord_pot=(ord_pot*95)/100;
+    if (rps<ord_rpm)
+       ord_pot=(ord_pot*105)/100;   
+    
+    if (ord_pot>300)
+       ord_pot=300;                                         //limitar la potencia máxima a 300, de manera que cuando llegue a este valor, estabilice las rps a un valor que no dañe el motor
+    if (ord_pot<0)
+       ord_pot=ord_rpm/4;
+    
+    EJEC_ORD();
+    
+    cont_x=0;                                                //reinicializamos el contador de numero palas de ejecucion
+    last_x=millis();                                         //pasamos el tiempo que lleva corriendo el programa al tiempo de ejecucion
+  }
+  
+  // ------------------------------------------------  
+  if(millis()-last_p>=mseg_p)                               //funcion del arduino que cronometra el tiempo que lleva funcionando el programa, si es mayor que el tiempo de pantalla, realizara la obtencion de rps y rpm y los pasa al serial
+  {   
+    double rps=((double)cont_p/(nPalas*2))*(1000.0/mseg_p);
+    double rpm=((double)cont_p/(nPalas*2))*(60000.0/mseg_p);
+    
+    
+    Serial.print("  ");
+    Serial.print (ord_eje);
+    Serial.print(" X  ");
+    Serial.print (ord_rpm);
+    Serial.print(" R  ");
+    Serial.print (ord_pot);
+    Serial.print(" P  ");
+          
+    Serial.print(nvez);
+    Serial.print(" V  ");
+    Serial.print((sval/nvez));
+    Serial.print(" M  ");
+        
+    Serial.print(cont_p);
+    Serial.print(" C RPS ");
+    Serial.print(rps);
+    Serial.print("   RPM  ");
+    Serial.print(rpm);
+    Serial.print(" VAL ");
+    Serial.println(val_luz_act);
+
+    
+    nvez=0;                                                   //reiniciar contador de numero de veces
+    sval=0;                                                   //reiniciar sumatorio
+
+    cont_p=0;                                                 //reinicializamos el contador de numero de palas de impresion en pantalla
+    last_p=millis();                                          //pasamos el tiempo que lleva corriendo el programa al tiempo de impresion en pantalla
+  }
+}
+
+//----------------------------------------------------------------------------------
+void LEER_ORD(void)
+{
+  int ord_num=0;
+  while (Serial.available()>0)
+    {
+      char ord_ent=Serial.read();
+      if (ord_num<200)                           // no permite introducir mas de 200 RPS 
+          if (ord_ent>='0' && ord_ent<='9')  
+              ord_num=(ord_num*10)+int(ord_ent-48);
+     }       
+ 
+  switch(ord_num)
+  {
+    case 0:        //PARADA
+    {
+      ord_rpm=0;
+      ord_eje=ord_num;                             //pasar la orden leida a la orden numerica
+      ord_pot=0;
+      break;
+    }
+  
+    case 1:          //ARRANQUE IZQUIERDA
+    {
+      ord_eje=ord_num;
+      break;
+    }
+  
+    case 3:          //ARRANQUE DERECHA
+    {
+      ord_eje=ord_num;
+      break;
+    }
+    
+    default:        //PONER VELOCIDAD
+    {
+      ord_rpm=ord_num;
+      ord_pot=ord_rpm/4;
+    }
+  }
+     
+}
+
+//----------------------------------------------------------------------------------
+void EJEC_ORD(void)                                       //EJECUTAR ORDEN(SENTIDO ROTOR O PARADA)
+{
+ switch(ord_eje)
+  {
+    case 0:        //PARADA
+    {
+      analogWrite(6,0);
+      analogWrite(5,0);
+      break;
+    }
+  
+    case 1:          //IZQUIERDA
+    {
+      analogWrite(6,0);
+      analogWrite(5, ord_pot);
+      break;
+    }
+  
+    case 3:          //DERECHA
+    {
+
+      analogWrite(5,0);
+      analogWrite(6, ord_pot);
+      break;
+    }
+  
+  }  
+}
+
